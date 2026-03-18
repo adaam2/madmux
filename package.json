@@ -1,0 +1,27 @@
+{
+  "name": "madagents",
+  "version": "1.0.0",
+  "description": "Git worktree manager with Claude sessions",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc && node build.mjs",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron .",
+    "postinstall": "electron-rebuild"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
+    "js-yaml": "^4.1.1",
+    "node-pty": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "electron": "^33.0.0",
+    "electron-rebuild": "^3.2.9",
+    "esbuild": "^0.27.4",
+    "typescript": "^5.6.0"
+  }
+}

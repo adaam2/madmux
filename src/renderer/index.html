@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;">
+  <title>madagents</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="xterm.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div id="sidebar-header">
+        <div class="drag-region"></div>
+        <h1 class="app-title">madagents</h1>
+        <button id="btn-add-worktree" class="icon-btn" title="New worktree (Cmd+N)" disabled>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M8 2v12M2 8h12"/>
+          </svg>
+        </button>
+      </div>
+
+      <div id="repo-info" class="hidden">
+        <span id="repo-name" class="repo-name"></span>
+        <button id="btn-setup" class="icon-btn" title="Setup repo for worktrees">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M7.429 1.525a3.5 3.5 0 016.072 3.506l-.066.114-1.732 3a.5.5 0 01-.808.073l-.058-.073L9.57 6.39a.5.5 0 01.058-.638l.058-.058.638-.638a1.5 1.5 0 00-1.976-2.247l-.15.127-.638.638a.5.5 0 01-.696.058l-.073-.058-1.268-1.267a.5.5 0 01-.058-.638l.058-.073zM1.525 7.429a.5.5 0 01.638-.058l.073.058 1.267 1.268a.5.5 0 01.058.638l-.058.073-.638.638a1.5 1.5 0 001.976 2.247l.15-.127.638-.638a.5.5 0 01.696-.058l.073.058 1.267 1.268a.5.5 0 01.058.638l-.058.073-1.732 3a.5.5 0 01-.808.073l-.058-.073L3.5 14.18a3.5 3.5 0 01-3.506-6.072l.114-.066z"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Multi-select toolbar -->
+      <div id="multi-select-bar" class="hidden">
+        <label class="checkbox-label select-all-label">
+          <input type="checkbox" id="select-all">
+          <span id="selected-count">0 selected</span>
+        </label>
+        <button id="btn-delete-selected" class="mini-danger-btn" disabled>Delete</button>
+      </div>
+
+      <div id="worktree-list"></div>
+
+      <div id="sidebar-footer">
+        <div id="worktree-dir-setting" class="dir-setting" title="Click to change worktree directory">
+          <button id="btn-worktree-dir" class="dir-btn">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M1.5 1h5l1 2H14.5a1 1 0 011 1v9a1 1 0 01-1 1h-13a1 1 0 01-1-1V2a1 1 0 011-1z"/>
+            </svg>
+            <span id="worktree-dir-path" class="dir-path">Not set</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main id="main-content">
+      <!-- Empty state -->
+      <div id="empty-state">
+        <div class="empty-icon">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M8 16h48v40H8z" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M8 16l8-8h32l8 8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M24 36h16M32 28v16" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+          </svg>
+        </div>
+        <h2>Select a git repository to get started</h2>
+        <p>File &rarr; Open Repository, or Cmd+O</p>
+      </div>
+
+      <!-- Terminal area -->
+      <div id="terminal-area" class="hidden">
+        <div id="terminal-toolbar">
+          <div class="terminal-info">
+            <span id="active-branch" class="branch-badge"></span>
+            <span id="active-path" class="path-text"></span>
+          </div>
+          <div class="terminal-actions">
+            <button id="btn-tab-shell" class="tab-btn active" data-tab="shell">Shell</button>
+            <button id="btn-tab-app" class="tab-btn" data-tab="app">App</button>
+          </div>
+        </div>
+        <div id="terminal-container"></div>
+        <div id="app-terminal-container" class="hidden"></div>
+      </div>
+
+      <!-- Statusbar -->
+      <div id="statusbar">
+        <div class="status-left">
+          <span id="status-branch" class="status-item"></span>
+          <span id="status-files" class="status-item"></span>
+        </div>
+        <div class="status-right">
+          <span id="status-additions" class="status-item status-green"></span>
+          <span id="status-deletions" class="status-item status-red"></span>
+        </div>
+      </div>
+
+      <!-- Settings panel (VS Code style, replaces main content) -->
+      <div id="settings-panel" class="hidden">
+        <div class="settings-header">
+          <h2>Settings</h2>
+          <button id="settings-close" class="icon-btn" title="Close">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M2 2l10 10M12 2L2 12"/>
+            </svg>
+          </button>
+        </div>
+        <div class="settings-body">
+          <div class="settings-section">
+            <h3>General</h3>
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="setting-name">Worktree Directory</span>
+                <span class="setting-desc">Default directory for new worktrees</span>
+              </div>
+              <input type="text" id="setting-worktree-dir" class="setting-input" placeholder="~/.worktrees">
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="setting-name">App Command</span>
+                <span class="setting-desc">Command to run in the App terminal tab (e.g. npm run dev)</span>
+              </div>
+              <input type="text" id="setting-app-command" class="setting-input" placeholder="npm run dev">
+            </div>
+          </div>
+          <div class="settings-section">
+            <h3>Defaults</h3>
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="setting-name">Post-open Script</span>
+                <span class="setting-desc">Default script to run when a worktree terminal opens</span>
+              </div>
+              <input type="text" id="setting-post-open" class="setting-input" placeholder=".madagents/setup.sh">
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="setting-name">Claude Arguments</span>
+                <span class="setting-desc">Default extra arguments for Claude CLI</span>
+              </div>
+              <input type="text" id="setting-claude-args" class="setting-input" placeholder="--model opus">
+            </div>
+          </div>
+          <div class="settings-section">
+            <h3>Config File</h3>
+            <p class="setting-desc-block">Settings are persisted to <code>.madmux/config.yaml</code> in the repo root.</p>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Setup session modal -->
+    <div id="setup-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <h3>New Repository Detected</h3>
+        <p class="setup-info">No setup script configured. Run a Claude session to analyze and create one?</p>
+        <p class="setup-detail">Claude will generate <code>.madagents/setup.sh</code> for new worktrees.</p>
+        <div class="modal-actions">
+          <button id="setup-skip" class="secondary-btn">Skip</button>
+          <button id="setup-run" class="primary-btn">Run Setup</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Delete worktree modal (also used for batch) -->
+    <div id="delete-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <h3 id="delete-title">Delete Worktree</h3>
+        <div id="delete-single-info" class="delete-info">
+          Branch: <strong id="delete-branch-name"></strong><br>
+          Path: <code id="delete-path-name"></code>
+        </div>
+        <div id="delete-batch-info" class="delete-info hidden">
+          <span id="delete-batch-count"></span> worktrees will be deleted.
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="delete-force">
+            Force delete (even with uncommitted changes)
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="delete-branch">
+            Also delete branches
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button id="delete-cancel" class="secondary-btn">Cancel</button>
+          <button id="delete-confirm" class="danger-btn">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add worktree modal -->
+    <div id="add-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <h3>New Worktree</h3>
+        <div class="form-group">
+          <label for="add-branch">Branch name</label>
+          <input type="text" id="add-branch" placeholder="feature/my-branch">
+        </div>
+        <div class="form-group">
+          <label for="add-path">Worktree path (optional)</label>
+          <input type="text" id="add-path" placeholder="Auto-generated from branch name">
+        </div>
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="add-create-branch" checked>
+            Create new branch
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button id="add-cancel" class="secondary-btn">Cancel</button>
+          <button id="add-confirm" class="primary-btn">Create</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
