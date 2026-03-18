@@ -5,7 +5,7 @@ import { PtyManager } from './pty-manager';
 import { loadGhosttyTheme } from './ghostty-config';
 import { loadConfig, saveConfig, getWorktreeConfig, setWorktreeConfig } from './config-store';
 import { listWorktrees, addWorktree, removeWorktreeAsync, deleteBranchAsync, getWorktreeStatus, getDiffStats, getAvailableBranches } from './worktree';
-import { loadRepoConfig, saveRepoConfig, syncAppConfigToRepo } from './repo-config';
+import { loadRepoConfig, saveRepoConfig, syncAppConfigToRepo, repoConfigExists } from './repo-config';
 
 let mainWindow: BrowserWindow | null = null;
 const ptyManager = new PtyManager();
@@ -183,6 +183,8 @@ ipcMain.handle('config:set-repo', (_event, repoPath: string, config) => {
   saveRepoConfig(repoPath, config);
 });
 
+ipcMain.handle('config:repo-exists', (_event, repoPath: string) => repoConfigExists(repoPath));
+
 ipcMain.handle('worktree:list', (_event, repoPath: string) => {
   try {
     const worktrees = listWorktrees(repoPath);
@@ -247,7 +249,7 @@ ipcMain.handle('terminal:create', (_event, worktreeId: string, worktreePath: str
   const appConfig = loadConfig();
   const mergedConfig = {
     ...config,
-    postOpenScript: config.postOpenScript || appConfig.defaultPostOpenScript,
+    postOpenScript: config.postOpenScript || appConfig.startScriptPath,
     claudeArgs: config.claudeArgs || appConfig.defaultClaudeArgs,
   };
 

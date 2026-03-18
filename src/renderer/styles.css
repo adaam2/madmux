@@ -35,10 +35,29 @@ body {
 
 #app { display: flex; height: 100vh; }
 
+/* ---- Resize handles ---- */
+.resize-handle {
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.resize-handle-v {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.resize-handle-v:hover,
+.resize-handle-v.active {
+  background: var(--accent-dim);
+}
+
 /* ---- Sidebar ---- */
 #sidebar {
   width: var(--sidebar-width);
-  min-width: var(--sidebar-width);
+  min-width: 180px;
+  max-width: 500px;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
   display: flex;
@@ -93,6 +112,7 @@ body {
 
 .icon-btn:hover { background: var(--bg-hover); color: var(--fg-primary); }
 .icon-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.icon-btn.active { background: var(--bg-active); color: var(--accent); }
 
 #repo-info {
   padding: 0 16px 4px;
@@ -376,7 +396,7 @@ body {
   border-radius: 3px;
 }
 
-/* ---- Terminal area ---- */
+/* ---- Terminal area (side-by-side) ---- */
 #terminal-area {
   flex: 1;
   display: flex;
@@ -413,39 +433,43 @@ body {
 
 .path-text { font-size: 11px; color: var(--fg-secondary); }
 
-.terminal-actions {
+.terminal-labels {
   display: flex;
-  gap: 2px;
+  gap: 0;
   -webkit-app-region: no-drag;
 }
 
-.tab-btn {
-  padding: 4px 12px;
-  border: none;
-  background: transparent;
+.pane-label {
+  font-size: 11px;
   color: var(--fg-muted);
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 12px;
 }
 
-.tab-btn:hover { color: var(--fg-secondary); background: var(--bg-hover); }
-
-.tab-btn.active {
-  color: var(--fg-primary);
-  background: var(--bg-tertiary);
+#terminal-split {
+  flex: 1;
+  display: flex;
+  min-height: 0;
 }
 
 #terminal-container, #app-terminal-container {
   flex: 1;
   padding: 4px;
+  min-width: 0;
   min-height: 0;
 }
+
+#terminal-container { border-right: 1px solid var(--border); }
 
 #terminal-container .xterm, #app-terminal-container .xterm {
   height: 100%;
   padding: 8px;
+}
+
+#terminal-split-handle {
+  width: 5px;
+  flex-shrink: 0;
 }
 
 /* ---- Statusbar ---- */
@@ -632,6 +656,13 @@ body {
 .form-group input[type="text"]:focus { border-color: var(--accent); }
 .form-group input[type="text"]::placeholder { color: var(--fg-muted); }
 
+.form-hint {
+  display: block;
+  font-size: 10px;
+  color: var(--fg-muted);
+  margin-top: 4px;
+}
+
 .checkbox-label {
   display: flex !important;
   align-items: center;
@@ -648,15 +679,57 @@ body {
   margin-top: 24px;
 }
 
-.setup-info { font-size: 13px; color: var(--fg-primary); margin-bottom: 12px; line-height: 1.5; }
-.setup-detail { font-size: 12px; color: var(--fg-secondary); margin-bottom: 8px; line-height: 1.5; }
-.setup-detail code {
+/* ---- Setup modal ---- */
+.setup-modal-content {
+  width: 480px;
+}
+
+.setup-info {
+  font-size: 13px;
+  color: var(--fg-primary);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.setup-info code {
   font-family: 'SF Mono', 'JetBrains Mono', monospace;
   font-size: 11px;
   background: var(--bg-primary);
   padding: 1px 4px;
   border-radius: 3px;
   color: var(--accent);
+}
+
+.setup-detail {
+  font-size: 12px;
+  color: var(--fg-secondary);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.config-schema-preview {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+
+.schema-field {
+  font-size: 12px;
+  padding: 3px 0;
+  line-height: 1.5;
+}
+
+.schema-key {
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.schema-desc {
+  color: var(--fg-muted);
 }
 
 .hidden { display: none !important; }
@@ -688,4 +761,13 @@ body {
 }
 .toast-error {
   border-left: 3px solid var(--red);
+}
+
+/* Resize active state - prevent text selection */
+body.resizing {
+  user-select: none !important;
+  cursor: col-resize !important;
+}
+body.resizing * {
+  cursor: col-resize !important;
 }

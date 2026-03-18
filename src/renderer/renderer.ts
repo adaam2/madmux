@@ -12,6 +12,7 @@ declare global {
       setWorktreeConfig: (id: string, config: any) => Promise<void>;
       getRepoConfig: (repoPath: string) => Promise<any>;
       setRepoConfig: (repoPath: string, config: any) => Promise<void>;
+      repoConfigExists: (repoPath: string) => Promise<boolean>;
       listWorktrees: (repoPath: string) => Promise<any>;
       addWorktree: (repoPath: string, path: string, branch: string, create: boolean) => Promise<any>;
       removeWorktree: (repoPath: string, path: string, opts?: { force?: boolean; deleteBranch?: string }) => Promise<any>;
@@ -51,11 +52,11 @@ let worktreeDir = '';
 let appCommand = '';
 let worktrees: WorktreeEntry[] = [];
 let activeWorktreeId: string | null = null;
-let activeTab: 'shell' | 'app' = 'shell';
 const terminals: Map<string, { term: Terminal; fit: FitAddon }> = new Map();
 const appTerminals: Map<string, { term: Terminal; fit: FitAddon }> = new Map();
 const claudeActive: Set<string> = new Set();
 const selectedWorktrees: Set<string> = new Set();
+let selectMode = false;
 
 // Elements
 const $ = (id: string) => document.getElementById(id)!;
@@ -83,12 +84,14 @@ async function init(): Promise<void> {
   if (config.repoPath) {
     repoPath = config.repoPath;
     await loadWorktrees();
+    await checkFirstOpen();
   }
   renderWorktreeDir();
 
   setupEventListeners();
   setupTerminalDataListener();
   setupMenuListeners();
+  setupResizeHandles();
 }
 
 function applyTheme(t: any): void {
@@ -97,15 +100,18 @@ function applyTheme(t: any): void {
   document.documentElement.style.setProperty('--fg-primary', t.foreground);
 }
 
+async function checkFirstOpen(): Promise<void> {
+  if (!repoPath) return;
+  const exists = await window.api.repoConfigExists(repoPath);
+  if (!exists) showSetupPrompt();
+}
+
 function setupMenuListeners(): void {
   window.api.onMenuSettings(() => toggleSettings());
   window.api.onMenuRepoOpened(async (path) => {
     repoPath = path;
     await loadWorktrees();
-    const config = await window.api.getConfig();
-    if (!config.worktreeConfigs?.[worktrees[0]?.id]?.postOpenScript && !config.defaultPostOpenScript) {
-      showSetupPrompt();
-    }
+    await checkFirstOpen();
   });
   window.api.onMenuWorktreeDirChanged((dir) => {
     worktreeDir = dir;
@@ -116,7 +122,6 @@ function setupMenuListeners(): void {
 function setupEventListeners(): void {
   btnAddWorktree.addEventListener('click', showAddModal);
   $('btn-worktree-dir').addEventListener('click', async () => {
-    // Handled by native menu now, but keep as quick-access
     const config = await window.api.getConfig();
     worktreeDir = config.worktreeDir || '';
     renderWorktreeDir();
@@ -125,11 +130,14 @@ function setupEventListeners(): void {
   // Setup button
   $('btn-setup').addEventListener('click', () => showSetupPrompt());
 
-  // Tab switching
-  $('btn-tab-shell').addEventListener('click', () => switchTab('shell'));
-  $('btn-tab-app').addEventListener('click', () => switchTab('app'));
-
-  // Multi-select
+  // Select mode toggle
+  $('btn-select-mode').addEventListener('click', () => {
+    selectMode = !selectMode;
+    selectedWorktrees.clear();
+    $('btn-select-mode').classList.toggle('active', selectMode);
+    renderWorktreeList();
+    updateMultiSelectBar();
+  });
   $('select-all').addEventListener('change', (e) => {
     const checked = (e.target as HTMLInputElement).checked;
     const deletable = worktrees.filter(w => !w.isMain);
@@ -146,7 +154,7 @@ function setupEventListeners(): void {
   $('add-modal').querySelector('.modal-backdrop')!.addEventListener('click', () => $('add-modal').classList.add('hidden'));
 
   // Setup modal
-  $('setup-run').addEventListener('click', runSetupSession);
+  $('setup-run').addEventListener('click', saveSetup);
   $('setup-skip').addEventListener('click', () => $('setup-modal').classList.add('hidden'));
   $('setup-modal').querySelector('.modal-backdrop')!.addEventListener('click', () => $('setup-modal').classList.add('hidden'));
 
@@ -160,16 +168,7 @@ function setupEventListeners(): void {
   setupSettingsListeners();
 
   // Resize
-  window.addEventListener('resize', () => {
-    if (activeWorktreeId) {
-      const entry = activeTab === 'shell' ? terminals.get(activeWorktreeId) : appTerminals.get(activeWorktreeId);
-      if (entry) {
-        entry.fit.fit();
-        const id = activeTab === 'shell' ? activeWorktreeId : `app-${activeWorktreeId}`;
-        window.api.resizeTerminal(id, entry.term.cols, entry.term.rows);
-      }
-    }
-  });
+  window.addEventListener('resize', () => fitAllVisibleTerminals());
 
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
@@ -192,7 +191,8 @@ function setupSettingsListeners(): void {
     const config = await window.api.getConfig();
     config.worktreeDir = ($('setting-worktree-dir') as HTMLInputElement).value.trim();
     config.appCommand = ($('setting-app-command') as HTMLInputElement).value.trim();
-    config.defaultPostOpenScript = ($('setting-post-open') as HTMLInputElement).value.trim() || undefined;
+    config.startScriptPath = ($('setting-start-script') as HTMLInputElement).value.trim() || undefined;
+    config.setupScriptPath = ($('setting-setup-script') as HTMLInputElement).value.trim() || undefined;
     const argsStr = ($('setting-claude-args') as HTMLInputElement).value.trim();
     config.defaultClaudeArgs = argsStr ? argsStr.split(/\s+/) : undefined;
     await window.api.setConfig(config);
@@ -201,7 +201,7 @@ function setupSettingsListeners(): void {
     renderWorktreeDir();
   }, 500);
 
-  ['setting-worktree-dir', 'setting-app-command', 'setting-post-open', 'setting-claude-args'].forEach(id => {
+  ['setting-worktree-dir', 'setting-app-command', 'setting-start-script', 'setting-setup-script', 'setting-claude-args'].forEach(id => {
     $(id).addEventListener('input', save);
   });
 }
@@ -219,13 +219,13 @@ async function loadSettingsValues(): Promise<void> {
   const config = await window.api.getConfig();
   ($('setting-worktree-dir') as HTMLInputElement).value = config.worktreeDir || '';
   ($('setting-app-command') as HTMLInputElement).value = config.appCommand || '';
-  ($('setting-post-open') as HTMLInputElement).value = config.defaultPostOpenScript || '';
+  ($('setting-start-script') as HTMLInputElement).value = config.startScriptPath || '';
+  ($('setting-setup-script') as HTMLInputElement).value = config.setupScriptPath || '';
   ($('setting-claude-args') as HTMLInputElement).value = (config.defaultClaudeArgs || []).join(' ');
 }
 
 function setupTerminalDataListener(): void {
   window.api.onTerminalData((worktreeId: string, data: string) => {
-    // Route to correct terminal map
     if (worktreeId.startsWith('app-')) {
       const realId = worktreeId.slice(4);
       const entry = appTerminals.get(realId);
@@ -244,28 +244,124 @@ function setupTerminalDataListener(): void {
   });
 }
 
+// ---- Resize handles ----
+
+function setupResizeHandles(): void {
+  setupSidebarResize();
+  setupTerminalSplitResize();
+}
+
+function setupSidebarResize(): void {
+  const handle = $('sidebar-resize');
+  const sidebar = $('sidebar');
+  let startX = 0;
+  let startWidth = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startX = e.clientX;
+    startWidth = sidebar.offsetWidth;
+    document.body.classList.add('resizing');
+    handle.classList.add('active');
+
+    const onMove = (e: MouseEvent) => {
+      const newWidth = Math.min(500, Math.max(180, startWidth + (e.clientX - startX)));
+      sidebar.style.width = `${newWidth}px`;
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.classList.remove('resizing');
+      handle.classList.remove('active');
+      fitAllVisibleTerminals();
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+function setupTerminalSplitResize(): void {
+  const handle = $('terminal-split-handle');
+  const split = $('terminal-split');
+  let startX = 0;
+  let startLeftWidth = 0;
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    startX = e.clientX;
+    startLeftWidth = terminalContainer.offsetWidth;
+    document.body.classList.add('resizing');
+    handle.classList.add('active');
+
+    const onMove = (e: MouseEvent) => {
+      const splitWidth = split.offsetWidth - 5; // handle width
+      const newLeft = Math.min(splitWidth - 100, Math.max(100, startLeftWidth + (e.clientX - startX)));
+      const leftPct = (newLeft / splitWidth) * 100;
+      terminalContainer.style.flex = 'none';
+      terminalContainer.style.width = `${leftPct}%`;
+      appTerminalContainer.style.flex = '1';
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.classList.remove('resizing');
+      handle.classList.remove('active');
+      fitAllVisibleTerminals();
+    };
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+function fitAllVisibleTerminals(): void {
+  if (!activeWorktreeId) return;
+  const shellEntry = terminals.get(activeWorktreeId);
+  if (shellEntry) {
+    shellEntry.fit.fit();
+    window.api.resizeTerminal(activeWorktreeId, shellEntry.term.cols, shellEntry.term.rows);
+  }
+  const appEntry = appTerminals.get(activeWorktreeId);
+  if (appEntry) {
+    appEntry.fit.fit();
+    window.api.resizeTerminal(`app-${activeWorktreeId}`, appEntry.term.cols, appEntry.term.rows);
+  }
+}
+
+// ---- Setup ----
+
 function showSetupPrompt(): void {
   $('setup-modal').classList.remove('hidden');
 }
 
-async function runSetupSession(): Promise<void> {
+async function saveSetup(): Promise<void> {
+  const config: any = {
+    worktreeDir: ($('setup-worktree-dir') as HTMLInputElement).value.trim() || undefined,
+    startScriptPath: ($('setup-start-script') as HTMLInputElement).value.trim() || undefined,
+    setupScriptPath: ($('setup-setup-script') as HTMLInputElement).value.trim() || undefined,
+    appCommand: ($('setup-app-command') as HTMLInputElement).value.trim() || undefined,
+  };
+  const argsStr = ($('setup-claude-args') as HTMLInputElement).value.trim();
+  if (argsStr) config.defaultClaudeArgs = argsStr.split(/\s+/);
+
+  // Save to repo config
+  await window.api.setRepoConfig(repoPath, config);
+
+  // Also update app config
+  const appConfig = await window.api.getConfig();
+  if (config.worktreeDir) { appConfig.worktreeDir = config.worktreeDir; worktreeDir = config.worktreeDir; }
+  if (config.appCommand) { appConfig.appCommand = config.appCommand; appCommand = config.appCommand; }
+  if (config.startScriptPath) appConfig.startScriptPath = config.startScriptPath;
+  if (config.setupScriptPath) appConfig.setupScriptPath = config.setupScriptPath;
+  if (config.defaultClaudeArgs) appConfig.defaultClaudeArgs = config.defaultClaudeArgs;
+  await window.api.setConfig(appConfig);
+
+  renderWorktreeDir();
   $('setup-modal').classList.add('hidden');
-  const mainWt = worktrees.find(w => w.isMain) || worktrees[0];
-  if (!mainWt) return;
-  await selectWorktree(mainWt.id);
-  setTimeout(() => {
-    const prompt = [
-      'Analyze this repository and help me create a setup script for new worktrees.',
-      'Look at the project structure, package manager, build tools, environment files, and dependencies.',
-      '', 'Then:',
-      '1. Ask me any questions about my development workflow',
-      '2. Create a setup script at .madagents/setup.sh',
-      '', 'Make the script idempotent. Start by examining the repo.',
-    ].join('\\n');
-    window.api.writeTerminal(mainWt.id, `claude "${prompt}"\r`);
-    claudeActive.add(mainWt.id);
-    renderWorktreeList();
-  }, 500);
+  showToast('Config saved to .madmux/config.yaml', 'success');
 }
 
 function renderWorktreeDir(): void {
@@ -293,7 +389,7 @@ async function loadWorktrees(): Promise<void> {
 function updateMultiSelectBar(): void {
   const bar = $('multi-select-bar');
   const deletable = worktrees.filter(w => !w.isMain);
-  if (deletable.length === 0) { bar.classList.add('hidden'); return; }
+  if (!selectMode || deletable.length === 0) { bar.classList.add('hidden'); return; }
   bar.classList.remove('hidden');
   $('selected-count').textContent = `${selectedWorktrees.size} selected`;
   ($('btn-delete-selected') as HTMLButtonElement).disabled = selectedWorktrees.size === 0;
@@ -312,7 +408,7 @@ function renderWorktreeList(): void {
     const isSelected = selectedWorktrees.has(wt.id);
 
     item.innerHTML = `
-      ${!wt.isMain ? `<input type="checkbox" class="wt-checkbox" ${isSelected ? 'checked' : ''}>` : '<span class="wt-checkbox-spacer"></span>'}
+      ${selectMode && !wt.isMain ? `<input type="checkbox" class="wt-checkbox" ${isSelected ? 'checked' : ''}>` : ''}
       <div class="wt-content">
         <div class="wt-branch">
           <svg class="branch-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -367,36 +463,25 @@ async function selectWorktree(worktreeId: string): Promise<void> {
   updateStatusbar(wt);
   renderWorktreeList();
 
-  // Show correct tab
-  switchTab(activeTab);
+  // Show both terminals side by side
+  showBothTerminals(worktreeId, wt.path);
 }
 
-function switchTab(tab: 'shell' | 'app'): void {
-  activeTab = tab;
-  $('btn-tab-shell').classList.toggle('active', tab === 'shell');
-  $('btn-tab-app').classList.toggle('active', tab === 'app');
-
-  terminalContainer.classList.toggle('hidden', tab !== 'shell');
-  appTerminalContainer.classList.toggle('hidden', tab !== 'app');
-
-  if (!activeWorktreeId) return;
-  const wt = worktrees.find(w => w.id === activeWorktreeId);
-  if (!wt) return;
-
-  if (tab === 'shell') {
-    hideAllChildren(terminalContainer);
-    if (!terminals.has(activeWorktreeId)) {
-      createTerminalInContainer(activeWorktreeId, wt.path, 'shell');
-    } else {
-      showTerminal(activeWorktreeId, 'shell');
-    }
+function showBothTerminals(worktreeId: string, worktreePath: string): void {
+  // Shell terminal
+  hideAllChildren(terminalContainer);
+  if (!terminals.has(worktreeId)) {
+    createTerminalInContainer(worktreeId, worktreePath, 'shell');
   } else {
-    hideAllChildren(appTerminalContainer);
-    if (!appTerminals.has(activeWorktreeId)) {
-      createTerminalInContainer(activeWorktreeId, wt.path, 'app');
-    } else {
-      showTerminal(activeWorktreeId, 'app');
-    }
+    showTerminal(worktreeId, 'shell');
+  }
+
+  // App terminal
+  hideAllChildren(appTerminalContainer);
+  if (!appTerminals.has(worktreeId)) {
+    createTerminalInContainer(worktreeId, worktreePath, 'app');
+  } else {
+    showTerminal(worktreeId, 'app');
   }
 }
 
@@ -413,7 +498,12 @@ function showTerminal(worktreeId: string, type: 'shell' | 'app'): void {
     el.style.display = 'block';
     const map = type === 'app' ? appTerminals : terminals;
     const entry = map.get(worktreeId);
-    if (entry) { entry.fit.fit(); entry.term.focus(); }
+    if (entry) {
+      requestAnimationFrame(() => {
+        entry.fit.fit();
+        entry.term.focus();
+      });
+    }
   }
 }
 
@@ -521,16 +611,13 @@ function confirmDelete(): void {
   const force = (document.getElementById('delete-force') as HTMLInputElement).checked;
   const delBranch = (document.getElementById('delete-branch') as HTMLInputElement).checked;
 
-  // Close modal immediately
   $('delete-modal').classList.add('hidden');
 
   if (deleteMode === 'single' && pendingDeleteWorktree) {
     const wt = pendingDeleteWorktree;
     pendingDeleteWorktree = null;
-    // Clean up terminals synchronously (local state only), fire off delete
     cleanupTerminals(wt.id);
     if (activeWorktreeId === wt.id) activeWorktreeId = null;
-    // Remove from local list immediately
     worktrees = worktrees.filter(w => w.id !== wt.id);
     renderWorktreeList();
 
@@ -547,7 +634,6 @@ function confirmDelete(): void {
     const count = toDelete.length;
     const items = toDelete.map(w => ({ path: w.path, branch: delBranch ? w.branch : undefined, force }));
 
-    // Clean up terminals and local state immediately
     for (const w of toDelete) {
       cleanupTerminals(w.id);
       if (activeWorktreeId === w.id) activeWorktreeId = null;
@@ -567,6 +653,9 @@ function confirmDelete(): void {
 
   pendingDeleteWorktree = null;
   selectedWorktrees.clear();
+  selectMode = false;
+  $('btn-select-mode').classList.remove('active');
+  updateMultiSelectBar();
 }
 
 function showToast(message: string, type: 'success' | 'error' = 'success'): void {
@@ -578,7 +667,6 @@ function showToast(message: string, type: 'success' | 'error' = 'success'): void
   toast.textContent = message;
   document.body.appendChild(toast);
 
-  // Trigger animation
   requestAnimationFrame(() => toast.classList.add('toast-visible'));
 
   setTimeout(() => {

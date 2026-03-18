@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   setWorktreeConfig: (id: string, config: any) => ipcRenderer.invoke('config:set-worktree', id, config),
   getRepoConfig: (repoPath: string) => ipcRenderer.invoke('config:get-repo', repoPath),
   setRepoConfig: (repoPath: string, config: any) => ipcRenderer.invoke('config:set-repo', repoPath, config),
+  repoConfigExists: (repoPath: string) => ipcRenderer.invoke('config:repo-exists', repoPath),
 
   // Worktrees
   listWorktrees: (repoPath: string) => ipcRenderer.invoke('worktree:list', repoPath),

@@ -1,21 +1,17 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
-import { AppConfig, WorktreeConfig } from '../shared/types';
+import { AppConfig, RepoConfig, WorktreeConfig } from '../shared/types';
 
 const CONFIG_DIR_NAME = '.madmux';
 const CONFIG_FILE_NAME = 'config.yaml';
 
-export interface RepoConfig {
-  worktreeDir?: string;
-  defaultPostOpenScript?: string;
-  defaultClaudeArgs?: string[];
-  appCommand?: string;
-  worktrees?: Record<string, WorktreeConfig>;
-}
-
 function configPath(repoPath: string): string {
   return path.join(repoPath, CONFIG_DIR_NAME, CONFIG_FILE_NAME);
+}
+
+export function repoConfigExists(repoPath: string): boolean {
+  return fs.existsSync(configPath(repoPath));
 }
 
 export function loadRepoConfig(repoPath: string): RepoConfig {
@@ -41,8 +37,10 @@ export function mergeRepoConfigIntoApp(repoPath: string, appConfig: AppConfig): 
   return {
     ...appConfig,
     worktreeDir: repo.worktreeDir || appConfig.worktreeDir,
-    defaultPostOpenScript: repo.defaultPostOpenScript || appConfig.defaultPostOpenScript,
+    startScriptPath: repo.startScriptPath || appConfig.startScriptPath,
+    setupScriptPath: repo.setupScriptPath || appConfig.setupScriptPath,
     defaultClaudeArgs: repo.defaultClaudeArgs || appConfig.defaultClaudeArgs,
+    appCommand: repo.appCommand || appConfig.appCommand,
     worktreeConfigs: { ...appConfig.worktreeConfigs, ...repo.worktrees },
   };
 }
@@ -50,8 +48,10 @@ export function mergeRepoConfigIntoApp(repoPath: string, appConfig: AppConfig): 
 export function syncAppConfigToRepo(repoPath: string, appConfig: AppConfig): void {
   const repo: RepoConfig = {
     worktreeDir: appConfig.worktreeDir,
-    defaultPostOpenScript: appConfig.defaultPostOpenScript,
+    startScriptPath: appConfig.startScriptPath,
+    setupScriptPath: appConfig.setupScriptPath,
     defaultClaudeArgs: appConfig.defaultClaudeArgs,
+    appCommand: appConfig.appCommand,
     worktrees: appConfig.worktreeConfigs,
   };
   saveRepoConfig(repoPath, repo);

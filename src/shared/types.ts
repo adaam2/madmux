@@ -32,11 +32,21 @@ export interface WorktreeConfig {
   shell?: string;
 }
 
+export interface RepoConfig {
+  worktreeDir?: string;
+  startScriptPath?: string;
+  setupScriptPath?: string;
+  appCommand?: string;
+  defaultClaudeArgs?: string[];
+  worktrees?: Record<string, WorktreeConfig>;
+}
+
 export interface AppConfig {
   repoPath: string;
   worktreeDir: string;
   worktreeConfigs: Record<string, WorktreeConfig>;
-  defaultPostOpenScript?: string;
+  startScriptPath?: string;
+  setupScriptPath?: string;
   defaultClaudeArgs?: string[];
   appCommand?: string;
 }
